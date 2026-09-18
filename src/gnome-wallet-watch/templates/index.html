@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gnome Wallet Watch</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main>
+    <h1>🧙 Gnome Wallet Watch</h1>
+    <p class="sub">Inspect any Solana wallet.</p>
+
+    <form id="form">
+      <input
+        id="address"
+        type="text"
+        inputmode="text"
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck="false"
+        placeholder="Paste a Solana wallet address"
+        required
+      />
+      <button type="submit" id="go">Inspect</button>
+    </form>
+
+    <div id="status" class="status"></div>
+    <section id="result" class="result hidden">
+      <div class="card">
+        <div class="label">Wallet</div>
+        <div class="value mono" id="r-address"></div>
+      </div>
+      <div class="card">
+        <div class="label">SOL Balance</div>
+        <div class="value big" id="r-sol"></div>
+      </div>
+      <div class="card">
+        <div class="label">SPL Tokens</div>
+        <div id="r-tokens" class="tokens"></div>
+      </div>
+      <div class="card">
+        <div class="label">Recent Transactions</div>
+        <div id="r-txs" class="txs"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const form = document.getElementById('form');
+    const addressEl = document.getElementById('address');
+    const statusEl = document.getElementById('status');
+    const resultEl = document.getElementById('result');
+    const goBtn = document.getElementById('go');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const address = addressEl.value.trim();
+      if (!address) return;
+
+      goBtn.disabled = true;
+      resultEl.classList.add('hidden');
+      statusEl.textContent = 'Fetching wallet data…';
+
+      try {
+        const res = await fetch(`/api/wallet/${encodeURIComponent(address)}?tx_limit=10`);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        render(data);
+        statusEl.textContent = '';
+      } catch (err) {
+        statusEl.textContent = '⚠️ ' + err.message;
+      } finally {
+        goBtn.disabled = false;
+      }
+    });
+
+    function short(sig) {
+      return sig.slice(0, 6) + '…' + sig.slice(-6);
+    }
+
+    function render(data) {
+      document.getElementById('r-address').textContent = data.address;
+      document.getElementById('r-sol').textContent = data.sol_balance.toFixed(4);
+
+      const tokensEl = document.getElementById('r-tokens');
+      if (!data.tokens.length) {
+        tokensEl.innerHTML = '<span class="dim">No SPL token holdings.</span>';
+      } else {
+        tokensEl.innerHTML = data.tokens.map(t => `
+          <div class="row">
+            <span class="mono dim">${t.mint.slice(0,4)}…${t.mint.slice(-4)}</span>
+            <span>${t.amount.toLocaleString(undefined, {maximumFractionDigits: 4})}</span>
+          </div>
+        `).join('');
+      }
+
+      const txsEl = document.getElementById('r-txs');
+      if (!data.recent_signatures.length) {
+        txsEl.innerHTML = '<span class="dim">No recent transactions.</span>';
+      } else {
+        txsEl.innerHTML = data.recent_signatures.map(tx => `
+          <div class="row">
+            <span class="mono dim">${short(tx.signature)}</span>
+            <span>${tx.block_time ? new Date(tx.block_time).toLocaleString() : 'unknown'}</span>
+          </div>
+        `).join('');
+      }
+
+      resultEl.classList.remove('hidden');
+    }
+  </script>
+</body>
+</html>
